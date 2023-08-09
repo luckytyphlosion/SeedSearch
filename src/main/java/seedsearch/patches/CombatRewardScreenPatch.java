@@ -56,7 +56,7 @@ public class CombatRewardScreenPatch {
     }
 
     public static void extractRewards(CombatRewardScreen _instance) {
-        SeedRunner.clearCombatRewards();
+        /*SeedRunner.clearCombatRewards();
         _instance.setupItemReward();
         for (RewardItem item : _instance.rewards) {
             if (item.type == RewardItem.RewardType.RELIC) {
@@ -68,7 +68,7 @@ public class CombatRewardScreenPatch {
             } else if (item.type == RewardItem.RewardType.POTION) {
                 SeedRunner.combatPotions.add(item.potion);
             }
-        }
+        }*/
     }
 
 }

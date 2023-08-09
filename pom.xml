@@ -23,14 +23,14 @@
             <artifactId>slaythespire</artifactId>
             <version>${SlayTheSpire.version}</version>
             <scope>system</scope>
-            <systemPath>${basedir}/../lib/desktop-1.0.jar</systemPath>
+            <systemPath>${env.USERPROFILE}/Documents/GitHub/sts_lib/desktop-1.0.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>com.evacipated.cardcrawl</groupId>
             <artifactId>ModTheSpire</artifactId>
             <version>${ModTheSpire.version}</version>
             <scope>system</scope>
-            <systemPath>${basedir}/../lib/ModTheSpire.jar</systemPath>
+            <systemPath>${env.USERPROFILE}/Documents/GitHub/sts_lib/ModTheSpire.jar</systemPath>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
@@ -73,7 +73,7 @@
                         <phase>package</phase>
                         <configuration>
                             <target>
-                                <copy file="target/SeedSearch.jar" tofile="../_ModTheSpire/mods/SeedSearch.jar"/>
+                                <copy file="target/SeedSearch.jar" tofile="C:/Program Files (x86)/Steam/steamapps/common/SlayTheSpire/mods/SeedSearch.jar"/>
                             </target>
                         </configuration>
                         <goals>

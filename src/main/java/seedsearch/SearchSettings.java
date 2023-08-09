@@ -33,7 +33,7 @@ public class SearchSettings {
     public int firstBoss = 3;
     public int secondBoss = 3;
     public int thirdBoss = 3;
-
+    public int desiredScore = 400;
 
     // Navigation
 

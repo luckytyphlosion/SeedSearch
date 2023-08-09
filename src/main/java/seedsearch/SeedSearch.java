@@ -1,6 +1,8 @@
 package seedsearch;
 
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
+import com.megacrit.cardcrawl.core.Settings;
+import com.megacrit.cardcrawl.core.Settings.GameLanguage;
 import com.megacrit.cardcrawl.unlock.UnlockTracker;
 
 import java.util.ArrayList;
@@ -62,14 +64,20 @@ public class SeedSearch {
         UnlockTracker.unlockProgress.putInteger("WATCHERUnlockLevel", settings.watcherUnlocks);
         UnlockTracker.retroactiveUnlock();
         UnlockTracker.refresh();
+        Settings.setLanguage(GameLanguage.ENG, true);
+
         SeedRunner runner = new SeedRunner(settings);
         ArrayList<Long> foundSeeds = new ArrayList<>();
         for (long seed = settings.startSeed; seed < settings.endSeed; seed++) {
             if (runner.runSeed(seed)) {
                 foundSeeds.add(seed);
                 if (settings.verbose) {
-                    runner.getSeedResult().printSeedStats(settings);
+                    SeedResult.printSeedStatsScore();
                 }
+                break;
+            }
+            if (seed % 10000 == 0) {
+                System.out.println("seed: " + seed);
             }
         }
         System.out.println(String.format("%d seeds found: ", foundSeeds.size()));
