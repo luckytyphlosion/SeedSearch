@@ -3,11 +3,14 @@ package seedsearch;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.core.Settings.GameLanguage;
+import com.megacrit.cardcrawl.helpers.SeedHelper;
 import com.megacrit.cardcrawl.unlock.UnlockTracker;
 
 import java.util.ArrayList;
 
 import static java.lang.System.exit;
+
+import java.text.MessageFormat;
 
 public class SeedSearch {
 
@@ -66,22 +69,36 @@ public class SeedSearch {
         UnlockTracker.refresh();
         Settings.setLanguage(GameLanguage.ENG, true);
 
-        SeedRunner runner = new SeedRunner(settings);
-        ArrayList<Long> foundSeeds = new ArrayList<>();
-        for (long seed = settings.startSeed; seed < settings.endSeed; seed++) {
-            if (runner.runSeed(seed)) {
-                foundSeeds.add(seed);
-                if (settings.verbose) {
-                    SeedResult.printSeedStatsScore();
+        if (settings.doFastSearch) {
+            SeedRunnerFast fastRunner = new SeedRunnerFast(settings);
+            boolean findSeedSuccess = fastRunner.findSeed(settings.startSeed, settings.endSeed);
+            if (findSeedSuccess) {
+                long foundSeed = fastRunner.getFoundSeed();
+                boolean isRight = fastRunner.getIsRight();
+
+                System.out.println(MessageFormat.format("Seed: {0} ({1}). Pick rewards on: {2}\n", SeedHelper.getString(foundSeed), foundSeed, isRight ? "right" : "left"));
+            } else {
+                System.out.println("Could not find a seed!");
+            }
+        } else {
+            SeedRunner runner = new SeedRunner(settings);
+            ArrayList<Long> foundSeeds = new ArrayList<>();
+            
+            for (long seed = settings.startSeed; seed < settings.endSeed; seed++) {
+                if (runner.runSeed(seed)) {
+                    foundSeeds.add(seed);
+                    if (settings.verbose) {
+                        SeedResult.printSeedStatsScore();
+                    }
+                    break;
                 }
-                break;
+                if (seed % 10000 == 0) {
+                    System.out.println("seed: " + seed);
+                }
             }
-            if (seed % 10000 == 0) {
-                System.out.println("seed: " + seed);
-            }
+            System.out.println(String.format("%d seeds found: ", foundSeeds.size()));
+            System.out.println(foundSeeds);            
         }
-        System.out.println(String.format("%d seeds found: ", foundSeeds.size()));
-        System.out.println(foundSeeds);
 
         if (settings.exitAfterSearch) {
             exit(0);
