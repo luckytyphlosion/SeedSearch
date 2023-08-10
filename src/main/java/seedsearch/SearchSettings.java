@@ -35,6 +35,7 @@ public class SearchSettings {
     public int thirdBoss = 3;
     public int desiredScore = 400;
     public boolean doFastSearch = false;
+    public boolean doAllstar = false;
 
     // Navigation
 
