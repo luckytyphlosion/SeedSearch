@@ -35,7 +35,11 @@ public class SearchSettings {
     public int thirdBoss = 3;
     public int desiredScore = 400;
     public boolean doFastSearch = false;
+    public boolean doSpecialized = true;
     public boolean doAllstar = false;
+    public boolean insanityOnly = false;
+    public boolean exactScore = false;
+    public int numSeedsToFind = 1;
 
     // Navigation
 

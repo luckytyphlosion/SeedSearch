@@ -73,10 +73,19 @@ public class SeedSearch {
             SeedRunnerFast fastRunner = new SeedRunnerFast(settings);
             boolean findSeedSuccess = fastRunner.findSeed(settings.startSeed, settings.endSeed);
             if (findSeedSuccess) {
-                long foundSeed = fastRunner.getFoundSeed();
-                boolean isRight = fastRunner.getIsRight();
-
-                System.out.println(MessageFormat.format("Seed: {0} ({1}). Pick rewards on: {2}\n", SeedHelper.getString(foundSeed), foundSeed, isRight ? "right" : "left"));
+                
+                ArrayList<SeedResultSimple> foundSeedsResults = fastRunner.getFoundSeedsResults();
+                StringBuilder foundSeedResultsOutput = new StringBuilder();
+                for (SeedResultSimple foundSeedResult : foundSeedsResults) {
+                    String foundSeedResultStr = MessageFormat.format(
+                        "Seed: {0} ({1}). Pick rewards on: {2}\n",
+                        SeedHelper.getString(foundSeedResult.seed),
+                        foundSeedResult.seed,
+                        foundSeedResult.isRight ? "right" : "left"
+                    );
+                    foundSeedResultsOutput.append(foundSeedResultStr);
+                }
+                System.out.println(foundSeedResultsOutput.toString());
             } else {
                 System.out.println("Could not find a seed!");
             }

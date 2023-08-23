@@ -27,24 +27,35 @@ public class SeedRunnerFast {
     private final int desiredScore;
     private final int desiredScoreMinusEncyclopedian;
     private final boolean doAllstar;
+    private final boolean insanityOnly;
+    private final boolean doSpecialized;
+    private final boolean exactScore;
+    private final int numSeedsToFind;
 
     private int[] commonCardsNumeric;
     private int[] uncommonCardsNumeric;
     private int[] rareCardsNumeric;
     private int[] allCardsNumeric;
-    private int[] uncommonColorlessCardsNumeric;
-    private int[] rareColorlessCardsNumeric;
 
     private int[] deckHistogram;
     private int[] rightDeckHistogram;
     private int[] blankDeckHistogram;
     
     private boolean isRight;
-    private long foundSeed;
-    
+    private int foundSeedsIndex;
+    private final long foundSeeds[];
+    private final boolean foundSeedsIsRight[];
+
     public SeedRunnerFast(SearchSettings settings) {
         this.settings = settings;
         this.doAllstar = this.settings.doAllstar;
+        this.insanityOnly = this.settings.insanityOnly;
+        this.doSpecialized = this.settings.doSpecialized;
+        this.exactScore = this.settings.exactScore;
+        this.numSeedsToFind = this.settings.numSeedsToFind;
+        this.foundSeeds = new long[this.numSeedsToFind];
+        this.foundSeedsIsRight = new boolean[this.numSeedsToFind];
+        this.foundSeedsIndex = 0;
 
         this.settings.checkIds();
         this.characterCards = new ArrayList<>();
@@ -255,12 +266,23 @@ public class SeedRunnerFast {
     private boolean testScore(int[] providedDeckHistogram) {
         int score = 0;
 
-        for (int i = 0; i < providedDeckHistogram.length; i++) {
-            if (providedDeckHistogram[i] >= 4) {
-                score += 25;
-                if (score >= desiredScoreMinusEncyclopedian) {
-                    return true;
+        if (!this.exactScore) {
+            for (int i = 0; i < providedDeckHistogram.length; i++) {
+                if (providedDeckHistogram[i] >= 4) {
+                    score += 25;
+                    if (score >= desiredScoreMinusEncyclopedian) {
+                        return true;
+                    }
                 }
+            }
+        } else {
+            for (int i = 0; i < providedDeckHistogram.length; i++) {
+                if (providedDeckHistogram[i] >= 4) {
+                    score += 25;
+                }
+            }
+            if (score == desiredScoreMinusEncyclopedian) {
+                return true;
             }
         }
 
@@ -276,39 +298,58 @@ public class SeedRunnerFast {
             this.doAllstarRngCalls();
         }
 
-        this.addSpecializedCards();
-        this.addDraftCards();
-        
-        if (this.testScore(this.deckHistogram)) {
-            this.isRight = false;
-            return true;
-        } else if (this.testScore(this.rightDeckHistogram)) {
-            this.isRight = true;
-            return true;
+        if (this.doSpecialized) {
+            this.addSpecializedCards();            
+        }
+
+        if (!this.insanityOnly) {
+            this.addDraftCards();
+            if (this.testScore(this.deckHistogram)) {
+                this.isRight = false;
+                return true;
+            } else if (this.testScore(this.rightDeckHistogram)) {
+                this.isRight = true;
+                return true;
+            } else {
+                return false;
+            }
         } else {
-            return false;
+            if (this.testScore(this.deckHistogram)) {
+                this.isRight = false;
+                return true;
+            } else {
+                return false;
+            }
         }
     }
 
     public boolean findSeed(long startSeed, long endSeed) {
         for (long currentSeed = startSeed; currentSeed < endSeed; currentSeed++) {
-            if (currentSeed % 1000000 == 0) {
+            if ((currentSeed & 0x7ffffff) == 0) {
                 System.out.println("seed: " + currentSeed);
             }
 
             if (this.runSeed(currentSeed)) {
-                this.foundSeed = currentSeed;
-                return true;
+                if (this.addSeed(currentSeed)) {
+                    return true;
+                }
             }
         }
-        return false;
+        return this.foundSeedsIndex != 0;
     }
 
-    public long getFoundSeed() {
-        return this.foundSeed;
+    public boolean addSeed(long seed) {
+        this.foundSeeds[this.foundSeedsIndex] = seed;
+        this.foundSeedsIsRight[this.foundSeedsIndex++] = this.isRight;
+        return this.foundSeedsIndex >= this.numSeedsToFind;
     }
 
-    public boolean getIsRight() {
-        return this.isRight;
+    public ArrayList<SeedResultSimple> getFoundSeedsResults() {
+        ArrayList<SeedResultSimple> foundSeedsResults = new ArrayList<>();
+        for (int i = 0; i < this.numSeedsToFind; i++) {
+            foundSeedsResults.add(new SeedResultSimple(this.foundSeeds[i], this.foundSeedsIsRight[i]));
+        }
+
+        return foundSeedsResults;
     }
 }
