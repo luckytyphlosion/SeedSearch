@@ -1,7 +1,12 @@
 package seedsearch;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import com.megacrit.cardcrawl.cards.AbstractCard;
 import com.megacrit.cardcrawl.cards.CardGroup;
@@ -14,8 +19,6 @@ import com.megacrit.cardcrawl.helpers.CardLibrary;
 import com.megacrit.cardcrawl.random.Random;
 
 public class SeedRunnerFast {
-    private Random cardRng;
-    private Random cardRandomRng;
     private ArrayList<AbstractCard> characterCards;
     private ArrayList<AbstractCard> commonCards;
     private ArrayList<AbstractCard> uncommonCards;
@@ -32,6 +35,7 @@ public class SeedRunnerFast {
     private final boolean doSpecialized;
     private final boolean exactScore;
     private final int numSeedsToFind;
+    private final int numThreads;
     private final boolean centerOnly;
 
     private int[] commonCardsNumeric;
@@ -41,12 +45,9 @@ public class SeedRunnerFast {
     private int[] rareColorlessCardsNumeric;
     private int[] allColoredCardsNumeric;
 
-    private int[] deckHistogram;
-    private int[] rightDeckHistogram;
     private int[] blankDeckHistogram;
-    
-    private boolean isRight;
-    private boolean noOrientation;
+
+    private final boolean noOrientation;
     private int foundSeedsIndex;
     private final long foundSeeds[];
     private final boolean foundSeedsIsRight[];
@@ -60,6 +61,7 @@ public class SeedRunnerFast {
         this.exactScore = settings.exactScore;
         this.centerOnly = settings.centerOnly;
         this.numSeedsToFind = numSeedsToFind;
+        this.numThreads = settings.numThreads;
         this.foundSeeds = new long[this.numSeedsToFind];
         this.foundSeedsIsRight = new boolean[this.numSeedsToFind];
         this.foundSeedsIndex = 0;
@@ -69,7 +71,6 @@ public class SeedRunnerFast {
         this.commonCards = new ArrayList<>();
         this.uncommonCards = new ArrayList<>();
         this.rareCards = new ArrayList<>();
-        this.isRight = false;
         this.noOrientation = this.centerOnly || this.insanityOnly;
         this.desiredScore = desiredScore;
         this.desiredScoreMinusEncyclopedian = this.desiredScore - 50;
@@ -170,245 +171,303 @@ public class SeedRunnerFast {
         }
 
         this.blankDeckHistogram = new int[numCards];
-        this.deckHistogram = new int[numCards];
-        this.rightDeckHistogram = new int[numCards];
     }
 
-    private void addCardNumeric(int cardNumeric) {
-        this.deckHistogram[cardNumeric]++;
-    }
+    public class SeedRunnerFastRunnable implements Runnable {
+        private final long startSeed;
+        private final long endSeed;
+        private final int threadNum;
 
-    private void addCardNumeric(int cardNumeric, int amount) {
-        this.deckHistogram[cardNumeric] += amount;
-    }
+        // mutated variables
+        private Random cardRng;
+        private Random cardRandomRng;
+        private int[] deckHistogram;
+        private int[] rightDeckHistogram;
+        private boolean isRight;
+        private boolean success;
 
-    private void addCardNumeric(int[] providedDeckHistogram, int cardNumeric, int amount) {
-        providedDeckHistogram[cardNumeric] += amount;
-    }
-
-    private static final int COMMON = 0;
-    private static final int UNCOMMON = 1;
-    private static final int RARE = 2;
-
-    /*
-    private AbstractCard.CardRarity rollRarity() {
-        int roll = cardRng.random(99) + 5;
-        if (roll < 3)
-            return AbstractCard.CardRarity.RARE; 
-        if (roll < 40) {
-            return AbstractCard.CardRarity.UNCOMMON;
-        }
-        return AbstractCard.CardRarity.COMMON;
-    }
-
-    private AbstractCard returnRandomCard() {
-        AbstractCard.CardRarity rarity = this.rollRarity();
-        ArrayList<AbstractCard> chosenCards;
-
-        if (rarity.equals(AbstractCard.CardRarity.COMMON)) {
-            chosenCards = this.commonCards;
-        } else if (rarity.equals(AbstractCard.CardRarity.UNCOMMON)) {
-            chosenCards = this.uncommonCards;
-        } else {
-            chosenCards = this.rareCards;
-        } 
-
-        return chosenCards.get(cardRandomRng.random(chosenCards.size() - 1));
-    }
-    */
-
-    private int rollRarity() {
-        int roll = this.cardRng.random(99) + 5;
-        if (roll < 3)
-            return RARE; 
-        if (roll < 40) {
-            return UNCOMMON;
-        }
-        return COMMON;
-    }
-
-    private int returnRandomCard() {
-        int rarity = this.rollRarity();
-        int[] chosenCards;
-
-        if (rarity == COMMON) {
-            chosenCards = this.commonCardsNumeric;
-        } else if (rarity == UNCOMMON) {
-            chosenCards = this.uncommonCardsNumeric;
-        } else {
-            chosenCards = this.rareCardsNumeric;
+        public SeedRunnerFastRunnable(long startSeed, long endSeed, int threadNum) {
+            this.startSeed = startSeed;
+            this.endSeed = endSeed;
+            this.threadNum = threadNum;
+            this.deckHistogram = new int[SeedRunnerFast.this.blankDeckHistogram.length];
+            this.rightDeckHistogram = new int[SeedRunnerFast.this.blankDeckHistogram.length];
+            this.isRight = false;
+            this.success = false;
+            System.out.println("created threadNum: " + threadNum);
         }
 
-        return chosenCards[this.cardRandomRng.random(chosenCards.length - 1)];
-    }
+        private void addCardNumeric(int cardNumeric) {
+            this.deckHistogram[cardNumeric]++;
+        }
 
-    private int returnTrulyRandomCard() {
-        return this.allColoredCardsNumeric[this.cardRandomRng.random(this.allColoredCardsNumeric.length - 1)];
-    }
+        private void addCardNumeric(int cardNumeric, int amount) {
+            this.deckHistogram[cardNumeric] += amount;
+        }
 
-    private void doAllstarRngCalls() {
-        for (int i = 0; i < 5; i++) {
-            if (cardRng.randomBoolean(0.5F)) {
-                // rare
-                this.cardRng.random(this.numRareColorlessCards - 1);
+        private void addCardNumeric(int[] providedDeckHistogram, int cardNumeric, int amount) {
+            providedDeckHistogram[cardNumeric] += amount;
+        }
+
+        private static final int COMMON = 0;
+        private static final int UNCOMMON = 1;
+        private static final int RARE = 2;
+
+        private int rollRarity() {
+            int roll = this.cardRng.random(99) + 5;
+            if (roll < 3)
+                return RARE; 
+            if (roll < 40) {
+                return UNCOMMON;
+            }
+            return COMMON;
+        }
+
+        private int returnRandomCard() {
+            int rarity = this.rollRarity();
+            int[] chosenCards;
+
+            if (rarity == COMMON) {
+                chosenCards = SeedRunnerFast.this.commonCardsNumeric;
+            } else if (rarity == UNCOMMON) {
+                chosenCards = SeedRunnerFast.this.uncommonCardsNumeric;
             } else {
-                // uncommon
-                this.cardRng.random(this.numUncommonColorlessCards - 1);
+                chosenCards = SeedRunnerFast.this.rareCardsNumeric;
             }
+
+            return chosenCards[this.cardRandomRng.random(chosenCards.length - 1)];
         }
-    }
 
-    private void addAllstarCards() {
-        for (int i = 0; i < 5; i++) {
-            if (cardRng.randomBoolean(0.5F)) {
-                this.addCardNumeric(this.rareColorlessCardsNumeric[this.cardRng.random(this.rareColorlessCardsNumeric.length - 1)], 3);
-            } else {
-                this.addCardNumeric(this.uncommonColorlessCardsNumeric[this.cardRng.random(this.uncommonColorlessCardsNumeric.length - 1)], 3);
-            }
+        private int returnTrulyRandomCard() {
+            return SeedRunnerFast.this.allColoredCardsNumeric[this.cardRandomRng.random(SeedRunnerFast.this.allColoredCardsNumeric.length - 1)];
         }
-    }
 
-    private void addInsanityCards() {
-        for (int i = 0; i < 50; i++) {
-            this.addCardNumeric(this.returnRandomCard());
-        }
-    }
-
-    private void addSpecializedCards() {
-        int specializedCardNumeric = this.returnTrulyRandomCard();
-        this.addCardNumeric(specializedCardNumeric, 15);
-    }
-
-    private void addDraftCards() {
-        System.arraycopy(this.deckHistogram, 0, this.rightDeckHistogram, 0, this.deckHistogram.length);
-
-        if (this.centerOnly) {
-            for (int i = 0; i < 15; i++) {
-                int firstCardNumeric = this.returnRandomCard();
-                int secondCardNumeric;
-                int thirdCardNumeric;
-
-                do {
-                    secondCardNumeric = this.returnRandomCard();
-                } while (firstCardNumeric == secondCardNumeric);
-
-                do {
-                    thirdCardNumeric = this.returnRandomCard();
-                } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
-
-                this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
-            }
-        } else {
-            for (int i = 0; i < 15; i++) {
-                int firstCardNumeric = this.returnRandomCard();
-                int secondCardNumeric;
-                int thirdCardNumeric;
-
-                do {
-                    secondCardNumeric = this.returnRandomCard();
-                } while (firstCardNumeric == secondCardNumeric);
-
-                do {
-                    thirdCardNumeric = this.returnRandomCard();
-                } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
-
-                if (i == 0) {
-                    this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
-                    this.addCardNumeric(this.rightDeckHistogram, secondCardNumeric, 3);                
+        private void doAllstarRngCalls() {
+            for (int i = 0; i < 5; i++) {
+                if (cardRng.randomBoolean(0.5F)) {
+                    // rare
+                    this.cardRng.random(SeedRunnerFast.this.numRareColorlessCards - 1);
                 } else {
-                    this.addCardNumeric(this.deckHistogram, firstCardNumeric, 3);
-                    this.addCardNumeric(this.rightDeckHistogram, thirdCardNumeric, 3);                
+                    // uncommon
+                    this.cardRng.random(SeedRunnerFast.this.numUncommonColorlessCards - 1);
                 }
             }
         }
-    }
 
-    private boolean testScore(int[] providedDeckHistogram) {
-        int score = 0;
+        private void addAllstarCards() {
+            for (int i = 0; i < 5; i++) {
+                if (cardRng.randomBoolean(0.5F)) {
+                    this.addCardNumeric(SeedRunnerFast.this.rareColorlessCardsNumeric[this.cardRng.random(SeedRunnerFast.this.rareColorlessCardsNumeric.length - 1)], 3);
+                } else {
+                    this.addCardNumeric(SeedRunnerFast.this.uncommonColorlessCardsNumeric[this.cardRng.random(SeedRunnerFast.this.uncommonColorlessCardsNumeric.length - 1)], 3);
+                }
+            }
+        }
 
-        if (!this.exactScore) {
-            for (int i = 0; i < providedDeckHistogram.length; i++) {
-                if (providedDeckHistogram[i] >= 4) {
-                    score += 25;
-                    if (score >= desiredScoreMinusEncyclopedian) {
-                        return true;
+        private void addInsanityCards() {
+            for (int i = 0; i < 50; i++) {
+                this.addCardNumeric(this.returnRandomCard());
+            }
+        }
+
+        private void addSpecializedCards() {
+            int specializedCardNumeric = this.returnTrulyRandomCard();
+            this.addCardNumeric(specializedCardNumeric, 15);
+        }
+
+        private void addDraftCards() {
+            System.arraycopy(this.deckHistogram, 0, this.rightDeckHistogram, 0, this.deckHistogram.length);
+
+            if (SeedRunnerFast.this.centerOnly) {
+                for (int i = 0; i < 15; i++) {
+                    int firstCardNumeric = this.returnRandomCard();
+                    int secondCardNumeric;
+                    int thirdCardNumeric;
+
+                    do {
+                        secondCardNumeric = this.returnRandomCard();
+                    } while (firstCardNumeric == secondCardNumeric);
+
+                    do {
+                        thirdCardNumeric = this.returnRandomCard();
+                    } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
+
+                    this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
+                }
+            } else {
+                for (int i = 0; i < 15; i++) {
+                    int firstCardNumeric = this.returnRandomCard();
+                    int secondCardNumeric;
+                    int thirdCardNumeric;
+
+                    do {
+                        secondCardNumeric = this.returnRandomCard();
+                    } while (firstCardNumeric == secondCardNumeric);
+
+                    do {
+                        thirdCardNumeric = this.returnRandomCard();
+                    } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
+
+                    if (i == 0) {
+                        this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
+                        this.addCardNumeric(this.rightDeckHistogram, secondCardNumeric, 3);                
+                    } else {
+                        this.addCardNumeric(this.deckHistogram, firstCardNumeric, 3);
+                        this.addCardNumeric(this.rightDeckHistogram, thirdCardNumeric, 3);                
                     }
                 }
             }
-        } else {
-            for (int i = 0; i < providedDeckHistogram.length; i++) {
-                if (providedDeckHistogram[i] >= 4) {
-                    score += 25;
+        }
+
+        private boolean testScore(int[] providedDeckHistogram) {
+            int score = 0;
+
+            if (!SeedRunnerFast.this.exactScore) {
+                for (int i = 0; i < providedDeckHistogram.length; i++) {
+                    if (providedDeckHistogram[i] >= 4) {
+                        score += 25;
+                        if (score >= desiredScoreMinusEncyclopedian) {
+                            return true;
+                        }
+                    }
+                }
+            } else {
+                for (int i = 0; i < providedDeckHistogram.length; i++) {
+                    if (providedDeckHistogram[i] >= 4) {
+                        score += 25;
+                    }
+                }
+                if (score == desiredScoreMinusEncyclopedian) {
+                    return true;
                 }
             }
-            if (score == desiredScoreMinusEncyclopedian) {
-                return true;
-            }
+
+            return false;
         }
 
-        return false;
-    }
+        public boolean runSeed(long currentSeed) {
+            this.cardRng = new Random(currentSeed);
+            this.cardRandomRng = new Random(currentSeed);
+            System.arraycopy(SeedRunnerFast.this.blankDeckHistogram, 0, this.deckHistogram, 0, this.deckHistogram.length);
+            this.addInsanityCards();
+            if (SeedRunnerFast.this.doAllstar) {
+                if (SeedRunnerFast.this.insanityOnly) {
+                    this.addAllstarCards();
+                } else {
+                    this.doAllstarRngCalls();                
+                }
+            }
 
-    public boolean runSeed(long currentSeed) {
-        this.cardRng = new Random(currentSeed);
-        this.cardRandomRng = new Random(currentSeed);
-        System.arraycopy(this.blankDeckHistogram, 0, this.deckHistogram, 0, this.deckHistogram.length);
-        this.addInsanityCards();
-        if (this.doAllstar) {
-            if (this.insanityOnly) {
-                this.addAllstarCards();
+            if (SeedRunnerFast.this.doSpecialized) {
+                this.addSpecializedCards();            
+            }
+
+            if (!SeedRunnerFast.this.insanityOnly) {
+                this.addDraftCards();
+            }
+
+            if (SeedRunnerFast.this.noOrientation) {
+                if (this.testScore(this.deckHistogram)) {
+                    this.isRight = false;
+                    return true;
+                } else {
+                    return false;
+                }
             } else {
-                this.doAllstarRngCalls();                
+                if (this.testScore(this.deckHistogram)) {
+                    this.isRight = false;
+                    return true;
+                } else if (this.testScore(this.rightDeckHistogram)) {
+                    this.isRight = true;
+                    return true;
+                } else {
+                    return false;
+                }
             }
         }
 
-        if (this.doSpecialized) {
-            this.addSpecializedCards();            
+        public void run() {
+            System.out.println("[" + this.threadNum + "] seed: " + startSeed);
+
+            for (long currentSeed = startSeed; currentSeed < endSeed; currentSeed++) {
+                if ((currentSeed & 0x7ffffff) == 0) {
+                    System.out.println("[" + this.threadNum + "] seed: " + currentSeed);
+                    if (Thread.interrupted()) {
+                        System.out.println("Exited via interrupt!");
+                        this.success = false;
+                        return;
+                    }
+                }
+
+                if (this.runSeed(currentSeed)) {
+                    if (SeedRunnerFast.this.addSeed(currentSeed, this.isRight)) {
+                        this.success = true;
+                        return;
+                    }
+                }
+            }
+            this.success = SeedRunnerFast.this.foundAnySeeds();
         }
 
-        if (!this.insanityOnly) {
-            this.addDraftCards();
-        }
-
-        if (this.noOrientation) {
-            if (this.testScore(this.deckHistogram)) {
-                this.isRight = false;
-                return true;
-            } else {
-                return false;
-            }
-        } else {
-            if (this.testScore(this.deckHistogram)) {
-                this.isRight = false;
-                return true;
-            } else if (this.testScore(this.rightDeckHistogram)) {
-                this.isRight = true;
-                return true;
-            } else {
-                return false;
-            }
+        public boolean successful() {
+            return this.success;
         }
     }
 
     public boolean findSeed(long startSeed, long endSeed) {
-        for (long currentSeed = startSeed; currentSeed < endSeed; currentSeed++) {
-            if ((currentSeed & 0x7ffffff) == 0) {
-                System.out.println("seed: " + currentSeed);
-            }
+        ArrayList<SeedRunnerFastRunnable> tasks = new ArrayList<>();
+        final long numSeedsToCheck = endSeed - startSeed;
+        final BigInteger numSeedsToCheckBig = BigInteger.valueOf(numSeedsToCheck);
+        final BigInteger startSeedBig = BigInteger.valueOf(startSeed);
+        final BigInteger numThreadsBig = BigInteger.valueOf(this.numThreads);
+        ExecutorService executor = Executors.newFixedThreadPool(this.numThreads);
 
-            if (this.runSeed(currentSeed)) {
-                if (this.addSeed(currentSeed)) {
-                    return true;
-                }
+        for (int i = 0; i < this.numThreads; i++) {
+            BigInteger iBig = BigInteger.valueOf(i);
+            BigInteger iPlus1Big = BigInteger.valueOf(i + 1);
+
+            long threadStartSeed = iBig.multiply(numSeedsToCheckBig).divide(numThreadsBig).add(startSeedBig).longValue();
+            long threadEndSeed = iPlus1Big.multiply(numSeedsToCheckBig).divide(numThreadsBig).add(startSeedBig).longValue();
+
+            System.out.printf("threadStartSeed: %d, threadEndSeed: %d\n", threadStartSeed, threadEndSeed);
+            SeedRunnerFastRunnable task = new SeedRunnerFastRunnable(threadStartSeed, threadEndSeed, i);
+            tasks.add(task);
+        }
+
+        CompletableFuture<?> future = CompletableFuture.anyOf(
+            tasks.stream()
+                .map(task -> CompletableFuture.runAsync(task, executor))
+                .toArray(CompletableFuture[]::new)
+        );
+
+        try {
+            future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            throw new RuntimeException(e);
+        }
+
+        boolean wasSuccessful = false;
+
+        for (SeedRunnerFastRunnable task : tasks) {
+            if (task.successful()) {
+                wasSuccessful = true;
+                break;
             }
         }
-        return this.foundSeedsIndex != 0;
+
+        executor.shutdownNow();
+
+        return wasSuccessful;
     }
 
-    public boolean addSeed(long seed) {
+    public synchronized boolean addSeed(long seed, boolean isRight) {
         this.foundSeeds[this.foundSeedsIndex] = seed;
-        this.foundSeedsIsRight[this.foundSeedsIndex++] = this.isRight;
+        this.foundSeedsIsRight[this.foundSeedsIndex++] = isRight;
         return this.foundSeedsIndex >= this.numSeedsToFind;
+    }
+
+    public synchronized boolean foundAnySeeds() {
+        return this.foundSeedsIndex != 0;
     }
 
     public ArrayList<SeedResultSimple> getFoundSeedsResults() {
@@ -424,3 +483,33 @@ public class SeedRunnerFast {
         return !this.noOrientation;
     }
 }
+
+
+
+/*
+private AbstractCard.CardRarity rollRarity() {
+    int roll = cardRng.random(99) + 5;
+    if (roll < 3)
+        return AbstractCard.CardRarity.RARE; 
+    if (roll < 40) {
+        return AbstractCard.CardRarity.UNCOMMON;
+    }
+    return AbstractCard.CardRarity.COMMON;
+}
+
+private AbstractCard returnRandomCard() {
+    AbstractCard.CardRarity rarity = this.rollRarity();
+    ArrayList<AbstractCard> chosenCards;
+
+    if (rarity.equals(AbstractCard.CardRarity.COMMON)) {
+        chosenCards = this.commonCards;
+    } else if (rarity.equals(AbstractCard.CardRarity.UNCOMMON)) {
+        chosenCards = this.uncommonCards;
+    } else {
+        chosenCards = this.rareCards;
+    } 
+
+    return chosenCards.get(cardRandomRng.random(chosenCards.size() - 1));
+}
+*/
+
