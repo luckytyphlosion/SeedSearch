@@ -21,6 +21,8 @@ public class SearchSettings {
 
     public int ascensionLevel = 0;
     public AbstractPlayer.PlayerClass playerClass = AbstractPlayer.PlayerClass.IRONCLAD;
+    public ArrayList<AbstractPlayer.PlayerClass> playerClasses = new ArrayList<>();
+
     public long startSeed = 0L;
     public long endSeed = 100L;
     public boolean verbose = true;
@@ -40,6 +42,9 @@ public class SearchSettings {
     public boolean insanityOnly = false;
     public boolean exactScore = false;
     public int numSeedsToFind = 1;
+    public ArrayList<Integer> numSeedsToFindTargeted = new ArrayList<>();
+    public boolean centerOnly = false;
+    public ArrayList<Integer> desiredScores = new ArrayList<>();
 
     // Navigation
 
