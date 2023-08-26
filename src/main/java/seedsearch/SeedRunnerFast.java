@@ -64,7 +64,7 @@ public class SeedRunnerFast {
         this.centerOnly = settings.centerOnly;
         this.numSeedsToFind = numSeedsToFind;
         this.numThreads = settings.numThreads;
-        this.numManualDraftPicks = Math.max(settings.numManualDraftPicks, 1);
+        this.numManualDraftPicks = Math.min(settings.numManualDraftPicks, 1);
         this.foundSeeds = new long[this.numSeedsToFind];
         this.foundSeedsIsRight = new boolean[this.numSeedsToFind];
         this.foundSeedsFirstCardOrientation = new int[this.numSeedsToFind];
