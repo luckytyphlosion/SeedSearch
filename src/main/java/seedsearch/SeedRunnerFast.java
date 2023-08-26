@@ -36,6 +36,7 @@ public class SeedRunnerFast {
     private final boolean exactScore;
     private final int numSeedsToFind;
     private final int numThreads;
+    private final int numManualDraftPicks;
     private final boolean centerOnly;
 
     private int[] commonCardsNumeric;
@@ -51,6 +52,7 @@ public class SeedRunnerFast {
     private int foundSeedsIndex;
     private final long foundSeeds[];
     private final boolean foundSeedsIsRight[];
+    private final int foundSeedsFirstCardOrientation[];
 
     public SeedRunnerFast(SearchSettings settings, int desiredScore, int numSeedsToFind, AbstractPlayer.PlayerClass playerClass) {
         //this.settings = settings;
@@ -62,8 +64,10 @@ public class SeedRunnerFast {
         this.centerOnly = settings.centerOnly;
         this.numSeedsToFind = numSeedsToFind;
         this.numThreads = settings.numThreads;
+        this.numManualDraftPicks = Math.max(settings.numManualDraftPicks, 1);
         this.foundSeeds = new long[this.numSeedsToFind];
         this.foundSeedsIsRight = new boolean[this.numSeedsToFind];
+        this.foundSeedsFirstCardOrientation = new int[this.numSeedsToFind];
         this.foundSeedsIndex = 0;
 
         //settings.checkIds();
@@ -179,11 +183,13 @@ public class SeedRunnerFast {
         private final int threadNum;
 
         // mutated variables
-        private Random cardRng;
-        private Random cardRandomRng;
-        private int[] deckHistogram;
-        private int[] rightDeckHistogram;
+        private final Random cardRng;
+        private final Random cardRandomRng;
+        private final int[] deckHistogram;
+        private final int[] rightDeckHistogram;
+        private final int[][] draftCardsForManualDraftPicks;
         private boolean isRight;
+        private int firstCardOrientation;
         private boolean success;
 
         public SeedRunnerFastRunnable(long startSeed, long endSeed, int threadNum) {
@@ -194,6 +200,9 @@ public class SeedRunnerFast {
             this.rightDeckHistogram = new int[SeedRunnerFast.this.blankDeckHistogram.length];
             this.isRight = false;
             this.success = false;
+            this.cardRng = new Random(0L);
+            this.cardRandomRng = new Random(0L);
+            this.draftCardsForManualDraftPicks = new int[SeedRunnerFast.this.numManualDraftPicks][3];
             System.out.println("created threadNum: " + threadNum);
         }
 
@@ -275,11 +284,53 @@ public class SeedRunnerFast {
             this.addCardNumeric(specializedCardNumeric, 15);
         }
 
+        private boolean tryAddFirstDraftCard(int[] providedDeckHistogram, int orientation) {
+            final int firstDraftCard = this.draftCardsForManualDraftPicks[0][orientation];
+            final int firstDraftCardCount = providedDeckHistogram[firstDraftCard];
+            if (firstDraftCardCount >= 1 && firstDraftCardCount <= 3) {
+                this.addCardNumeric(providedDeckHistogram, firstDraftCard, 3);
+                this.firstCardOrientation = orientation;
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        private void addFirstDraftCard(int[] providedDeckHistogram) {
+            // prioritize center first since that's what the fastest strat already is
+            if (!this.tryAddFirstDraftCard(providedDeckHistogram, 1)) {
+                // otherwise, choose left or right
+                if (!this.tryAddFirstDraftCard(providedDeckHistogram, 0)) {
+                    if (!this.tryAddFirstDraftCard(providedDeckHistogram, 2)) {
+                        // indifferent to any card picks, so just pick center
+                        this.addCardNumeric(providedDeckHistogram, this.draftCardsForManualDraftPicks[0][1], 3);
+                    }
+                }
+            }
+        }
+
         private void addDraftCards() {
             System.arraycopy(this.deckHistogram, 0, this.rightDeckHistogram, 0, this.deckHistogram.length);
+            int i;
 
+            for (i = 0; i < SeedRunnerFast.this.numManualDraftPicks; i++) {
+                int firstCardNumeric = this.returnRandomCard();
+                int secondCardNumeric;
+                int thirdCardNumeric;
+
+                do {
+                    secondCardNumeric = this.returnRandomCard();
+                } while (firstCardNumeric == secondCardNumeric);
+
+                do {
+                    thirdCardNumeric = this.returnRandomCard();
+                } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
+                this.draftCardsForManualDraftPicks[i][0] = firstCardNumeric;
+                this.draftCardsForManualDraftPicks[i][1] = secondCardNumeric;
+                this.draftCardsForManualDraftPicks[i][2] = thirdCardNumeric;
+            }
             if (SeedRunnerFast.this.centerOnly) {
-                for (int i = 0; i < 15; i++) {
+                for (; i < 15; i++) {
                     int firstCardNumeric = this.returnRandomCard();
                     int secondCardNumeric;
                     int thirdCardNumeric;
@@ -294,8 +345,13 @@ public class SeedRunnerFast {
 
                     this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
                 }
+                if (SeedRunnerFast.this.numManualDraftPicks == 1) {
+                    this.addFirstDraftCard(this.deckHistogram);
+                }
             } else {
-                for (int i = 0; i < 15; i++) {
+                boolean isFirstPickAfterManualPicks = true;
+
+                for (; i < 15; i++) {
                     int firstCardNumeric = this.returnRandomCard();
                     int secondCardNumeric;
                     int thirdCardNumeric;
@@ -308,7 +364,8 @@ public class SeedRunnerFast {
                         thirdCardNumeric = this.returnRandomCard();
                     } while (firstCardNumeric == thirdCardNumeric || secondCardNumeric == thirdCardNumeric);
 
-                    if (i == 0) {
+                    if (isFirstPickAfterManualPicks) {
+                        isFirstPickAfterManualPicks = false;
                         this.addCardNumeric(this.deckHistogram, secondCardNumeric, 3);
                         this.addCardNumeric(this.rightDeckHistogram, secondCardNumeric, 3);                
                     } else {
@@ -316,7 +373,48 @@ public class SeedRunnerFast {
                         this.addCardNumeric(this.rightDeckHistogram, thirdCardNumeric, 3);                
                     }
                 }
+
+                if (SeedRunnerFast.this.numManualDraftPicks == 1) {
+                    this.addFirstDraftCard(this.deckHistogram);
+                    this.addFirstDraftCard(this.rightDeckHistogram);
+                } /*else if (SeedRunnerFast.this.numManualDraftPicks == 2) {
+                    // notation
+                    // nS = \d[abc]: \d is which draft pick (refer to as n), abc is which slot (refer to as S)
+                    // check if there are any duplicates in 1 and 2
+                    // if not:
+                    // - check if 1S, 2S
+                    // - check if 1S increases score, if so, increase score
+                    // - check if 2S
+                    // test 1S
+                    // for two, check the following cases:
+                    // picking first A
+                
+                    // prioritize center first since that's what the fastest strat already is
+                    if (!this.addFirstDraftCard(this.deckHistogram, 1)) {
+                        // otherwise, choose left or right
+                        if (!this.addFirstDraftCard(this.deckHistogram, 0)) {
+                            if (!this.addFirstDraftCard(this.deckHistogram, 2)) {
+                                // indifferent to any card picks, so just pick center
+                                this.addCardNumeric(this.deckHistogram, this.draftCardsForManualDraftPicks[0][1], 3);
+                            }
+                        }
+                    }
+                    final int firstDraftCardCenter = this.draftCardsForManualDraftPicks[0][1];
+                    final int firstDraftCardCenterCount = this.deckHistogram[firstDraftCardCenter];
+                    if (firstDraftCardCenterCount >= 1 && firstDraftCardCenterCount <= 3) {
+                        this.addCardNumeric(this.deckHistogram, firstDraftCardCenter, 3);
+                    } else {
+                        
+                    }
+                    for (int j = 0; j < 3; j++) {
+                        final int earlyDraftCard = this.draftCardsForManualDraftPicks[0][j];
+                        final int earlyDraftCardCount = this.deckHistogram[earlyDraftCard];
+                        
+                    }
+                }*/
             }
+
+
         }
 
         private boolean testScore(int[] providedDeckHistogram) {
@@ -346,8 +444,8 @@ public class SeedRunnerFast {
         }
 
         public boolean runSeed(long currentSeed) {
-            this.cardRng = new Random(currentSeed);
-            this.cardRandomRng = new Random(currentSeed);
+            this.cardRng.random.setSeed(currentSeed);
+            this.cardRandomRng.random.setSeed(currentSeed);
             System.arraycopy(SeedRunnerFast.this.blankDeckHistogram, 0, this.deckHistogram, 0, this.deckHistogram.length);
             this.addInsanityCards();
             if (SeedRunnerFast.this.doAllstar) {
@@ -400,7 +498,13 @@ public class SeedRunnerFast {
                 }
 
                 if (this.runSeed(currentSeed)) {
-                    if (SeedRunnerFast.this.addSeed(currentSeed, this.isRight)) {
+                    boolean foundAllSeeds;
+                    if (SeedRunnerFast.this.numManualDraftPicks > 0) {
+                        foundAllSeeds = SeedRunnerFast.this.addSeed(currentSeed, this.isRight, this.firstCardOrientation);
+                    } else {
+                        foundAllSeeds = SeedRunnerFast.this.addSeed(currentSeed, this.isRight);
+                    }
+                    if (foundAllSeeds) {
                         this.success = true;
                         return;
                     }
@@ -466,6 +570,13 @@ public class SeedRunnerFast {
         return this.foundSeedsIndex >= this.numSeedsToFind;
     }
 
+    public synchronized boolean addSeed(long seed, boolean isRight, int firstCardOrientation) {
+        this.foundSeeds[this.foundSeedsIndex] = seed;
+        this.foundSeedsIsRight[this.foundSeedsIndex] = isRight;
+        this.foundSeedsFirstCardOrientation[this.foundSeedsIndex++] = firstCardOrientation;
+        return this.foundSeedsIndex >= this.numSeedsToFind;
+    }
+
     public synchronized boolean foundAnySeeds() {
         return this.foundSeedsIndex != 0;
     }
@@ -473,7 +584,7 @@ public class SeedRunnerFast {
     public ArrayList<SeedResultSimple> getFoundSeedsResults() {
         ArrayList<SeedResultSimple> foundSeedsResults = new ArrayList<>();
         for (int i = 0; i < this.numSeedsToFind; i++) {
-            foundSeedsResults.add(new SeedResultSimple(this.foundSeeds[i], this.foundSeedsIsRight[i]));
+            foundSeedsResults.add(new SeedResultSimple(this.foundSeeds[i], this.foundSeedsIsRight[i], this.foundSeedsFirstCardOrientation[i]));
         }
 
         return foundSeedsResults;

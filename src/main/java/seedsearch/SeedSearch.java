@@ -16,6 +16,9 @@ public class SeedSearch {
 
     public static boolean loadingEnabled = true;
     public static SearchSettings settings;
+    public static final String[] firstCardOrientationStrings = {
+        "left", "center", "right"
+    };
 
     private static void unlockBosses(String[] bosslist, int unlockLevel) {
         for (int i = 0; i < unlockLevel; i++) {
@@ -65,6 +68,11 @@ public class SeedSearch {
                         if (settings.insanityOnly) {
                             foundSeedResultStr += "\n";
                         } else {
+                            if (settings.numManualDraftPicks > 0) {
+                                String firstCardOrientationStr = SeedSearch.firstCardOrientationStrings[foundSeedResult.firstCardOrientation];
+                                foundSeedResultStr += " Pick first card on: " + firstCardOrientationStr + ".";
+                            }
+
                             String orientation;
                             if (settings.centerOnly) {
                                 orientation = "center";

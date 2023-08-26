@@ -43,6 +43,7 @@ public class SearchSettings {
     public boolean exactScore = false;
     public int numSeedsToFind = 1;
     public int numThreads = 1;
+    public int numManualDraftPicks = 0;
     public ArrayList<Integer> numSeedsToFindTargeted = new ArrayList<>();
     public boolean centerOnly = false;
     public ArrayList<Integer> desiredScores = new ArrayList<>();
